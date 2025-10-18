@@ -30,12 +30,12 @@ def build_message(name: str, phone: str, message: str) -> str:
     msg = f"""
 🔑 *NEUE ANFRAGE – Schlüsseldienst*
 
-👤 *Name:* {name}
-📞 *Telefon:* {phone}
-💬 *Nachricht:* {message or '—'}
+👤 *ИМЯ:* {name}
+📞 *Номер телефона:* {phone}
+💬 *Сообщение:* {message or '—'}
 
-⏰ *Zeit:* {time.strftime('%d.%m.%Y %H:%M:%S')}
-🚨 *BITTE SOFORT ZURÜCKRUFEN!*
+⏰ *Время:* {time.strftime('%d.%m.%Y %H:%M:%S')}
+🚨 **
 """.strip()
     return msg
 
