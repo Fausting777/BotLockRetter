@@ -1,0 +1,89 @@
+import os
+import time
+from flask import Flask, request, jsonify
+import requests
+
+# -------------------------------
+# Настройки Telegram
+# -------------------------------
+TELEGRAM_BOT_TOKEN = "8420693302:AAHyYTKIKhbpBdN19zzSK4kxJapMWPZwipI"
+TELEGRAM_CHAT_ID   = "7512603920"
+RATE_LIMIT_SECONDS = 15  # антифлуд (секунд между запросами с одного IP)
+
+app = Flask(__name__)
+
+_last_hit = {}  # для антифлуда
+
+
+def rate_limited(ip: str) -> bool:
+    """Простая антифлуд-защита"""
+    now = time.time()
+    last = _last_hit.get(ip, 0)
+    if now - last < RATE_LIMIT_SECONDS:
+        return True
+    _last_hit[ip] = now
+    return False
+
+
+def build_message(name: str, phone: str, message: str) -> str:
+    """Формируем красивое сообщение"""
+    msg = f"""
+🔑 *NEUE ANFRAGE – Schlüsseldienst*
+
+👤 *Name:* {name}
+📞 *Telefon:* {phone}
+💬 *Nachricht:* {message or '—'}
+
+⏰ *Zeit:* {time.strftime('%d.%m.%Y %H:%M:%S')}
+🚨 *BITTE SOFORT ZURÜCKRUFEN!*
+""".strip()
+    return msg
+
+
+@app.post("/api/contact")
+def contact():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+
+    if rate_limited(ip):
+        return jsonify({"ok": False, "error": "Too many requests. Please wait."}), 429
+
+    data = request.get_json(silent=True) or {}
+    name    = (data.get("name") or "").strip()
+    phone   = (data.get("phone") or "").strip()
+    message = (data.get("message") or "").strip()
+    privacy = bool(data.get("privacy"))
+
+    # honeypot — защита от ботов
+    if (data.get("hp") or "").strip():
+        return jsonify({"ok": True})
+
+    if not name or not phone or not privacy:
+        return jsonify({"ok": False, "error": "Missing required fields"}), 400
+
+    text = build_message(name, phone, message)
+
+    tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+
+    try:
+        r = requests.post(tg_url, json=payload, timeout=10)
+        j = r.json()
+        if not j.get("ok"):
+            return jsonify({"ok": False, "error": "Telegram API error", "details": j}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+    return jsonify({"ok": True})
+
+
+@app.get("/")
+def health():
+    return "OK", 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
